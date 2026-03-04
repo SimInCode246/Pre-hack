@@ -1,0 +1,2221 @@
+<!doctype html>
+<html lang="en" class="h-full">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Affordable Housing Finder</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <!-- <script src="/_sdk/element_sdk.js"></script> -->
+  <!-- <script src="/_sdk/data_sdk.js"></script> -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&amp;display=swap"
+    rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            primary: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              200: '#bfdbfe',
+              300: '#93c5fd',
+              400: '#60a5fa',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              800: '#1e40af',
+              900: '#1e3a8a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * {
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    }
+
+    .animate-fade-in {
+      animation: fadeIn 0.5s ease-out;
+    }
+
+    .animate-slide-up {
+      animation: slideUp 0.5s ease-out;
+    }
+
+    .animate-slide-down {
+      animation: slideDown 0.3s ease-out;
+    }
+
+    .animate-scale-in {
+      animation: scaleIn 0.3s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes scaleIn {
+      from {
+        opacity: 0;
+        transform: scale(0.95);
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    .card-hover {
+      transition: all 0.3s ease;
+    }
+
+    .card-hover:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.15);
+    }
+
+    .btn-hover {
+      transition: all 0.2s ease;
+    }
+
+    .btn-hover:hover {
+      transform: translateY(-1px);
+    }
+
+    .filter-transition {
+      transition: all 0.3s ease;
+    }
+
+    .leaflet-container {
+      z-index: 1;
+    }
+
+    .spinner {
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      from {
+        transform: rotate(0deg);
+      }
+
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .gradient-bg {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    .glass-effect {
+      backdrop-filter: blur(10px);
+      background: rgba(255, 255, 255, 0.9);
+    }
+
+    .dark .glass-effect {
+      background: rgba(17, 24, 39, 0.9);
+    }
+
+    input:focus,
+    select:focus {
+      outline: none;
+      ring: 2px;
+      ring-color: #3b82f6;
+    }
+
+    .scrollbar-thin::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .scrollbar-thin::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+
+    .scrollbar-thin::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+
+    .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+  <style>
+    body {
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+
+<body class="h-full bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
+  <div id="app" class="h-full overflow-auto scrollbar-thin"></div>
+  <script>
+    // ============================================
+    // AFFORDABLE HOUSING FINDER - COMPLETE APPLICATION
+    // ============================================
+
+    // --- Configuration ---
+    const defaultConfig = {
+      hero_title: 'Find Your Affordable Dream Home',
+      hero_subtitle: 'Discover budget-friendly properties tailored to your income and preferences',
+      primary_color: '#2563eb',
+      secondary_color: '#f8fafc',
+      text_color: '#1e293b',
+      accent_color: '#3b82f6',
+      background_color: '#f1f5f9'
+    };
+
+    let config = { ...defaultConfig };
+
+    // --- Application State ---
+    const state = {
+      currentPage: 'home',
+      isAuthenticated: false,
+      user: null,
+      darkMode: false,
+      isLoading: false,
+      properties: [],
+      filteredProperties: [],
+      selectedProperty: null,
+      savedProperties: [],
+      filters: {
+        city: '',
+        budgetMin: 0,
+        budgetMax: 100000,
+        income: '',
+        propertyType: 'all',
+        bhk: 'all',
+        amenities: [],
+        loanEligibility: false,
+        governmentScheme: ''
+      },
+      searchQuery: {
+        city: '',
+        income: ''
+      },
+      toast: null,
+      mobileMenuOpen: false,
+      mobileFiltersOpen: false,
+      apiEndpoint: localStorage.getItem('apiEndpoint') || 'http://localhost:8080/api',
+      apiConnected: true,
+      showAPIGuide: false
+    };
+
+    // --- API Integration Functions ---
+    const apiService = {
+      // Configure the API endpoint
+      setEndpoint: (endpoint) => {
+        if (endpoint && endpoint.trim()) {
+          state.apiEndpoint = endpoint;
+          localStorage.setItem('apiEndpoint', endpoint);
+          state.apiConnected = true;
+          showToast('API endpoint configured! Ready to fetch live data.');
+          return true;
+        }
+        state.apiConnected = false;
+        return false;
+      },
+
+      // Fetch properties from backend API
+      fetchProperties: async (filters = {}) => {
+        if (!state.apiEndpoint) {
+          return { success: false, error: 'API endpoint not configured' };
+        }
+
+        state.isLoading = true;
+        render();
+
+        try {
+          const queryParams = new URLSearchParams();
+          if (filters.city) queryParams.append('city', filters.city);
+          if (filters.propertyType && filters.propertyType !== 'all') {
+            queryParams.append('type', filters.propertyType);
+          }
+          if (filters.bhk && filters.bhk !== 'all') queryParams.append('bhk', filters.bhk);
+          if (filters.budgetMin) queryParams.append('budgetMin', filters.budgetMin);
+          if (filters.budgetMax) queryParams.append('budgetMax', filters.budgetMax);
+          if (filters.loanEligibility) queryParams.append('eligibleForLoan', true);
+
+          const response = await fetch(
+            `${state.apiEndpoint}/properties?${queryParams.toString()}`,
+            {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('jwt_token') || ''}`
+              }
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error(`API Error: ${response.statusText}`);
+          }
+
+          const data = await response.json();
+          state.filteredProperties = data.properties || [];
+          state.isLoading = false;
+          render();
+          return { success: true, data: state.filteredProperties };
+        } catch (error) {
+          state.isLoading = false;
+          showToast(`Failed to fetch properties: ${error.message}`, 'error');
+          console.error('API Error:', error);
+          return { success: false, error: error.message };
+        }
+      },
+
+      // Authenticate with backend
+      authenticate: async (email, password, isLogin = true) => {
+        if (!state.apiEndpoint) {
+          return { success: false, error: 'API endpoint not configured' };
+        }
+
+        try {
+          const endpoint = isLogin ? '/auth/login' : '/auth/register';
+          const response = await fetch(`${state.apiEndpoint}${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email,
+              password,
+              name: isLogin ? undefined : email.split('@')[0]
+            })
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Authentication failed');
+          }
+
+          const data = await response.json();
+          localStorage.setItem('jwt_token', data.token);
+          localStorage.setItem('user', JSON.stringify(data.user));
+          return { success: true, data: data.user };
+        } catch (error) {
+          return { success: false, error: error.message };
+        }
+      },
+
+      // Check PMAY eligibility and loan options
+      checkLoanEligibility: async (annualIncome) => {
+        if (!state.apiEndpoint) {
+          // Fallback to local calculation
+          return {
+            pmayEligible: annualIncome < 600000,
+            maxLoanAmount: annualIncome * 5,
+            estimatedEMI: (annualIncome * 0.3) / 12,
+            schemes: getPMAYSchemes(annualIncome)
+          };
+        }
+
+        try {
+          const response = await fetch(`${state.apiEndpoint}/loans/eligibility`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('jwt_token') || ''}`
+            },
+            body: JSON.stringify({ annualIncome })
+          });
+
+          if (!response.ok) throw new Error('Failed to check eligibility');
+          return await response.json();
+        } catch (error) {
+          console.error('Loan eligibility check error:', error);
+          // Fallback to local calculation
+          return {
+            pmayEligible: annualIncome < 600000,
+            maxLoanAmount: annualIncome * 5,
+            estimatedEMI: (annualIncome * 0.3) / 12,
+            schemes: getPMAYSchemes(annualIncome)
+          };
+        }
+      },
+
+      // Save property to user's favorites
+      saveProperty: async (propertyId) => {
+        if (!state.apiEndpoint) {
+          // Fallback to local storage via Data SDK
+          if (window.dataSdk) {
+            await window.dataSdk.create({
+              id: `saved_${propertyId}_${Date.now()}`,
+              type: 'saved_property',
+              propertyId: propertyId,
+              createdAt: new Date().toISOString()
+            });
+          }
+          showToast('Property saved locally');
+          return { success: true };
+        }
+
+        try {
+          const response = await fetch(`${state.apiEndpoint}/properties/${propertyId}/save`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('jwt_token') || ''}`
+            }
+          });
+
+          if (!response.ok) throw new Error('Failed to save property');
+          showToast('Property saved to your favorites!');
+          return await response.json();
+        } catch (error) {
+          showToast(`Error: ${error.message}`, 'error');
+          return { success: false, error: error.message };
+        }
+      },
+
+      // Get property recommendations based on user profile
+      getRecommendations: async (userProfile) => {
+        if (!state.apiEndpoint) {
+          // Return local recommendations
+          return getLocalRecommendations(userProfile);
+        }
+
+        try {
+          const response = await fetch(`${state.apiEndpoint}/properties/recommendations`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('jwt_token') || ''}`
+            },
+            body: JSON.stringify(userProfile)
+          });
+
+          if (!response.ok) throw new Error('Failed to get recommendations');
+          return await response.json();
+        } catch (error) {
+          console.error('Recommendations error:', error);
+          return getLocalRecommendations(userProfile);
+        }
+      }
+    };
+
+    // --- Local Government Schemes Helper ---
+    const getPMAYSchemes = (annualIncome) => {
+      const schemes = [];
+
+      if (annualIncome < 300000) {
+        schemes.push({
+          name: 'PMAY - EWS (Economically Weaker Section)',
+          subsidy: 'Up to 6.5% interest subsidy',
+          maxLoan: 500000,
+          loanTenure: '20 years'
+        });
+      }
+
+      if (annualIncome >= 300000 && annualIncome < 600000) {
+        schemes.push({
+          name: 'PMAY - LIG (Low Income Group)',
+          subsidy: 'Up to 4% interest subsidy',
+          maxLoan: 1000000,
+          loanTenure: '20 years'
+        });
+      }
+
+      if (annualIncome >= 600000 && annualIncome < 1800000) {
+        schemes.push({
+          name: 'PMAY - MIG-I (Middle Income Group)',
+          subsidy: 'Up to 3% interest subsidy',
+          maxLoan: 2700000,
+          loanTenure: '20 years'
+        });
+      }
+
+      if (annualIncome >= 1800000 && annualIncome < 2700000) {
+        schemes.push({
+          name: 'PMAY - MIG-II (Middle Income Group)',
+          subsidy: 'Up to 2% interest subsidy',
+          maxLoan: 3600000,
+          loanTenure: '20 years'
+        });
+      }
+
+      // Additional schemes
+      schemes.push({
+        name: 'Credit Linked Subsidy Scheme (CLSS)',
+        subsidy: 'Interest subsidy on home loans',
+        benefit: 'Applicable to all categories'
+      });
+
+      return schemes;
+    };
+
+    const getLocalRecommendations = (userProfile) => {
+      return sampleProperties.filter(p => {
+        const monthlyIncome = userProfile.monthlyIncome || 0;
+        const maxRent = monthlyIncome * 0.3;
+        return p.type === userProfile.propertyType && p.price <= maxRent;
+      }).slice(0, 6);
+    };
+    const sampleProperties = [
+      {
+        id: '1',
+        title: 'Modern 2BHK Apartment in Koramangala',
+        price: 25000,
+        type: 'rent',
+        bhk: 2,
+        city: 'Bangalore',
+        area: 'Koramangala',
+        sqft: 1100,
+        description: 'Beautifully designed apartment with modern amenities, perfect for young professionals. Located in the heart of Koramangala with easy access to IT parks and shopping centers.',
+        amenities: ['parking', 'gym', 'security', 'lift', 'power-backup'],
+        image: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&h=600&fit=crop',
+        images: [
+          'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&h=600&fit=crop',
+          'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&h=600&fit=crop',
+          'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&h=600&fit=crop'
+        ],
+        lat: 12.9352,
+        lng: 77.6245,
+        contactName: 'Rahul Sharma',
+        contactPhone: '+91 98765 43210'
+      },
+      {
+        id: '2',
+        title: 'Spacious 3BHK Villa in Whitefield',
+        price: 45000,
+        type: 'rent',
+        bhk: 3,
+        city: 'Bangalore',
+        area: 'Whitefield',
+        sqft: 1800,
+        description: 'Luxurious villa with garden space, ideal for families. Features include modern kitchen, spacious bedrooms, and a private garden area.',
+        amenities: ['parking', 'garden', 'security', 'clubhouse', 'swimming-pool'],
+        image: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&h=600&fit=crop',
+        images: [
+          'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&h=600&fit=crop',
+          'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=800&h=600&fit=crop',
+          'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&h=600&fit=crop'
+        ],
+        lat: 12.9698,
+        lng: 77.7499,
+        contactName: 'Priya Patel',
+        contactPhone: '+91 98765 43211'
+      },
+      {
+        id: '3',
+        title: 'Affordable 1BHK in Electronic City',
+        price: 12000,
+        type: 'rent',
+        bhk: 1,
+        city: 'Bangalore',
+        area: 'Electronic City',
+        sqft: 650,
+        description: 'Compact and well-maintained apartment perfect for bachelors or couples. Close to major IT companies and public transport.',
+        amenities: ['parking', 'security', 'lift', 'power-backup'],
+        image: 'https://images.unsplash.com/photo-1493809842364-78817add7ffb?w=800&h=600&fit=crop',
+        images: [
+          'https://images.unsplash.com/photo-1493809842364-78817add7ffb?w=800&h=600&fit=crop',
+          'https://images.unsplash.com/photo-1484154218962-a197022b25ba?w=800&h=600&fit=crop'
+        ],
+        lat: 12.8458,
+        lng: 77.6692,
+        contactName: 'Amit Kumar',
+        contactPhone: '+91 98765 43212'
+      },
+      {
+        id: '4',
+        title: 'Premium 2BHK in Indiranagar',
+        price: 35000,
+        type: 'rent',
+        bhk: 2,
+        city: 'Bangalore',
+        area: 'Indiranagar',
+        sqft: 1250,
+        description: 'Premium apartment in the heart of Indiranagar. Walking distance to 100ft Road with cafes, restaurants, and nightlife.',
+        amenities: ['parking', 'gym', 'security', 'lift', 'rooftop'],
+        image: 'https://images.unsplash.com/photo-1560185007-cde436f6a4d0?w=800&h=600&fit=crop',
+        images: [
+          'https://images.unsplash.com/photo-1560185007-cde436f6a4d0?w=800&h=600&fit=crop',
+          'https://images.unsplash.com/photo-1560185008-b033106af5c3?w=800&h=600&fit=crop'
+        ],
+        lat: 12.9784,
+        lng: 77.6408,
+        contactName: 'Sneha Reddy',
+        contactPhone: '+91 98765 43213'
+      },
+      {
+        id: '5',
+        title: 'Family 3BHK Apartment in HSR Layout',
+        price: 38000,
+        type: 'rent',
+        bhk: 3,
+        city: 'Bangalore',
+        area: 'HSR Layout',
+        sqft: 1600,
+        description: 'Ideal family home with excellent schools and parks nearby. Well-ventilated rooms with ample natural light.',
+        amenities: ['parking', 'gym', 'security', 'lift', 'playground', 'power-backup'],
+        image: 'https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?w=800&h=600&fit=crop',
+        images: [
+          'https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?w=800&h=600&fit=crop',
+          'https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?w=800&h=600&fit=crop'
+        ],
+        lat: 12.9116,
+        lng: 77.6474,
+        contactName: 'Vijay Krishnan',
+        contactPhone: '+91 98765 43214'
+      },
+      {
+        id: '6',
+        title: 'Budget Studio in BTM Layout',
+        price: 8500,
+        type: 'rent',
+        bhk: 1,
+        city: 'Bangalore',
+        area: 'BTM Layout',
+        sqft: 450,
+        description: 'Cozy studio apartment perfect for students and young professionals. Well-connected by metro and buses.',
+        amenities: ['security', 'power-backup'],
+        image: 'https://images.unsplash.com/photo-1536376072261-38c75010e6c9?w=800&h=600&fit=crop',
+        images: [
+          'https://images.unsplash.com/photo-1536376072261-38c75010e6c9?w=800&h=600&fit=crop'
+        ],
+        lat: 12.9166,
+        lng: 77.6101,
+        contactName: 'Kavitha S',
+        contactPhone: '+91 98765 43215'
+      },
+      {
+        id: '7',
+        title: 'Luxury 4BHK Penthouse in MG Road',
+        price: 85000,
+        type: 'rent',
+        bhk: 4,
+        city: 'Bangalore',
+        area: 'MG Road',
+        sqft: 2800,
+        description: 'Stunning penthouse with panoramic city views. Features include private terrace, modular kitchen, and premium finishes throughout.',
+        amenities: ['parking', 'gym', 'security', 'lift', 'swimming-pool', 'clubhouse', 'rooftop'],
+        image: 'https://images.unsplash.com/photo-1600607687644-aac4c3eac7f4?w=800&h=600&fit=crop',
+        images: [
+          'https://images.unsplash.com/photo-1600607687644-aac4c3eac7f4?w=800&h=600&fit=crop',
+          'https://images.unsplash.com/photo-1600566752355-35792bedcfea?w=800&h=600&fit=crop'
+        ],
+        lat: 12.9756,
+        lng: 77.6064,
+        contactName: 'Arjun Menon',
+        contactPhone: '+91 98765 43216'
+      },
+      {
+        id: '8',
+        title: 'Cozy 2BHK in Marathahalli',
+        price: 18000,
+        type: 'rent',
+        bhk: 2,
+        city: 'Bangalore',
+        area: 'Marathahalli',
+        sqft: 950,
+        description: 'Well-maintained apartment close to Outer Ring Road. Easy commute to major IT parks in Whitefield and Bellandur.',
+        amenities: ['parking', 'security', 'lift', 'power-backup'],
+        image: 'https://images.unsplash.com/photo-1560448205-4d9b3e6bb6db?w=800&h=600&fit=crop',
+        images: [
+          'https://images.unsplash.com/photo-1560448205-4d9b3e6bb6db?w=800&h=600&fit=crop'
+        ],
+        lat: 12.9592,
+        lng: 77.6974,
+        contactName: 'Deepa Nair',
+        contactPhone: '+91 98765 43217'
+      },
+      {
+        id: '9',
+        title: 'Modern 2BHK Flat for Sale in Jayanagar',
+        price: 7500000,
+        type: 'buy',
+        bhk: 2,
+        city: 'Bangalore',
+        area: 'Jayanagar',
+        sqft: 1150,
+        description: 'Ready-to-move apartment in prime Jayanagar location. Walking distance to metro station and shopping complex.',
+        amenities: ['parking', 'security', 'lift', 'power-backup', 'gym'],
+        image: 'https://images.unsplash.com/photo-1558036117-15d82a90b9b1?w=800&h=600&fit=crop',
+        images: [
+          'https://images.unsplash.com/photo-1558036117-15d82a90b9b1?w=800&h=600&fit=crop',
+          'https://images.unsplash.com/photo-1560185127-6ed189bf02f4?w=800&h=600&fit=crop'
+        ],
+        lat: 12.9308,
+        lng: 77.5838,
+        contactName: 'Ravi Shankar',
+        contactPhone: '+91 98765 43218'
+      },
+      {
+        id: '10',
+        title: 'Affordable 3BHK Apartment for Sale',
+        price: 6200000,
+        type: 'buy',
+        bhk: 3,
+        city: 'Bangalore',
+        area: 'Yelahanka',
+        sqft: 1450,
+        description: 'Newly constructed apartment with modern amenities. Great for families looking for affordable housing near the airport.',
+        amenities: ['parking', 'security', 'lift', 'playground', 'clubhouse'],
+        image: 'https://images.unsplash.com/photo-1600585154526-990dced4db0d?w=800&h=600&fit=crop',
+        images: [
+          'https://images.unsplash.com/photo-1600585154526-990dced4db0d?w=800&h=600&fit=crop'
+        ],
+        lat: 13.1007,
+        lng: 77.5963,
+        contactName: 'Lakshmi Prasad',
+        contactPhone: '+91 98765 43219'
+      },
+      {
+        id: '11',
+        title: 'Compact 1BHK in Andheri West',
+        price: 22000,
+        type: 'rent',
+        bhk: 1,
+        city: 'Mumbai',
+        area: 'Andheri West',
+        sqft: 550,
+        description: 'Well-designed compact apartment near Lokhandwala. Close to metro station and entertainment hubs.',
+        amenities: ['parking', 'security', 'lift'],
+        image: 'https://images.unsplash.com/photo-1502672023488-70e25813eb80?w=800&h=600&fit=crop',
+        images: [
+          'https://images.unsplash.com/photo-1502672023488-70e25813eb80?w=800&h=600&fit=crop'
+        ],
+        lat: 19.1364,
+        lng: 72.8296,
+        contactName: 'Nikhil Joshi',
+        contactPhone: '+91 98765 43220'
+      },
+      {
+        id: '12',
+        title: 'Spacious 2BHK in Powai',
+        price: 48000,
+        type: 'rent',
+        bhk: 2,
+        city: 'Mumbai',
+        area: 'Powai',
+        sqft: 1050,
+        description: 'Lake-view apartment in upscale Powai locality. Walking distance to Hiranandani Gardens.',
+        amenities: ['parking', 'gym', 'security', 'lift', 'swimming-pool', 'clubhouse'],
+        image: 'https://images.unsplash.com/photo-1600573472591-ee6b68d14c68?w=800&h=600&fit=crop',
+        images: [
+          'https://images.unsplash.com/photo-1600573472591-ee6b68d14c68?w=800&h=600&fit=crop'
+        ],
+        lat: 19.1176,
+        lng: 72.9060,
+        contactName: 'Meera Kulkarni',
+        contactPhone: '+91 98765 43221'
+      },
+      {
+        id: '13',
+        title: 'Budget 2BHK in Gurgaon',
+        price: 20000,
+        type: 'rent',
+        bhk: 2,
+        city: 'Delhi',
+        area: 'Sector 49, Gurgaon',
+        sqft: 1000,
+        description: 'Affordable housing in rapidly developing sector. Near to schools, hospitals, and metro connectivity.',
+        amenities: ['parking', 'security', 'power-backup'],
+        image: 'https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=800&h=600&fit=crop',
+        images: [
+          'https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=800&h=600&fit=crop'
+        ],
+        lat: 28.4089,
+        lng: 77.0422,
+        contactName: 'Suresh Yadav',
+        contactPhone: '+91 98765 43222'
+      },
+      {
+        id: '14',
+        title: 'Modern 3BHK in Noida',
+        price: 32000,
+        type: 'rent',
+        bhk: 3,
+        city: 'Delhi',
+        area: 'Sector 137, Noida',
+        sqft: 1550,
+        description: 'Spacious apartment in Express Highway locality. IT hub proximity with excellent infrastructure.',
+        amenities: ['parking', 'gym', 'security', 'lift', 'swimming-pool', 'clubhouse'],
+        image: 'https://images.unsplash.com/photo-1600047509358-9dc75507daeb?w=800&h=600&fit=crop',
+        images: [
+          'https://images.unsplash.com/photo-1600047509358-9dc75507daeb?w=800&h=600&fit=crop'
+        ],
+        lat: 28.5474,
+        lng: 77.3911,
+        contactName: 'Anita Sharma',
+        contactPhone: '+91 98765 43223'
+      },
+      {
+        id: '15',
+        title: 'Sea-View 2BHK in Juhu',
+        price: 75000,
+        type: 'rent',
+        bhk: 2,
+        city: 'Mumbai',
+        area: 'Juhu',
+        sqft: 1100,
+        description: 'Premium sea-facing apartment in celebrity neighborhood. Walking distance to Juhu Beach.',
+        amenities: ['parking', 'gym', 'security', 'lift', 'swimming-pool', 'garden'],
+        image: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&h=600&fit=crop',
+        images: [
+          'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&h=600&fit=crop'
+        ],
+        lat: 19.1075,
+        lng: 72.8263,
+        contactName: 'Rohit Malhotra',
+        contactPhone: '+91 98765 43224'
+      }
+    ];
+
+    // --- Utility Functions ---
+    const formatPrice = (price, type) => {
+      if (type === 'buy') {
+        if (price >= 10000000) {
+          return `₹${(price / 10000000).toFixed(2)} Cr`;
+        } else if (price >= 100000) {
+          return `₹${(price / 100000).toFixed(2)} Lac`;
+        }
+      }
+      return `₹${price.toLocaleString('en-IN')}${type === 'rent' ? '/mo' : ''}`;
+    };
+
+    const formatAnnualIncome = (income) => {
+      const annual = income * 12;
+      if (annual >= 10000000) {
+        return `₹${(annual / 10000000).toFixed(2)} Cr/year`;
+      } else if (annual >= 100000) {
+        return `₹${(annual / 100000).toFixed(2)} Lac/year`;
+      }
+      return `₹${annual.toLocaleString('en-IN')}/year`;
+    };
+
+    const checkPMAYEligibility = (annualIncome) => {
+      // PMAY eligibility: Annual income less than 6 lakhs
+      const sixLacs = 600000;
+      return annualIncome < sixLacs;
+    };
+
+    const getMaxAffordableRent = (monthlyIncome) => {
+      // 30% of monthly salary is recommended for rent
+      return Math.floor(monthlyIncome * 0.3);
+    };
+
+    const getMaxAffordableHome = (monthlyIncome) => {
+      // For home purchase, typically EMI should be 30% of salary
+      // Using 5% annual interest rate for rough calculation
+      const monthlyEMI = monthlyIncome * 0.3;
+      // Rough approximation: EMI * 200 = Loan Amount
+      return monthlyEMI * 200;
+    };
+
+    const getAmenityIcon = (amenity) => {
+      const icons = {
+        'parking': '🅿️',
+        'gym': '💪',
+        'security': '🔒',
+        'lift': '🛗',
+        'power-backup': '⚡',
+        'swimming-pool': '🏊',
+        'clubhouse': '🏠',
+        'garden': '🌳',
+        'playground': '🎢',
+        'rooftop': '🏙️'
+      };
+      return icons[amenity] || '✓';
+    };
+
+    const getAmenityLabel = (amenity) => {
+      return amenity.split('-').map(word =>
+        word.charAt(0).toUpperCase() + word.slice(1)
+      ).join(' ');
+    };
+
+    const showToast = (message, type = 'success') => {
+      state.toast = { message, type };
+      render();
+      setTimeout(() => {
+        state.toast = null;
+        render();
+      }, 3000);
+    };
+
+    const navigate = (page, data = null) => {
+      state.currentPage = page;
+      if (data) {
+        if (page === 'property-details') {
+          state.selectedProperty = data;
+        }
+      }
+      state.mobileMenuOpen = false;
+      window.scrollTo(0, 0);
+      render();
+    };
+
+    const toggleDarkMode = () => {
+      state.darkMode = !state.darkMode;
+      document.documentElement.classList.toggle('dark', state.darkMode);
+      render();
+    };
+
+    // --- Authentication Functions ---
+    const handleLogin = async (email, password) => {
+      state.isLoading = true;
+      render();
+
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Check saved users from Data SDK
+      const savedUser = state.savedProperties.find(
+        item => item.type === 'user' && item.email === email
+      );
+
+      if (savedUser || (email && password.length >= 6)) {
+        state.isAuthenticated = true;
+        state.user = {
+          name: savedUser?.name || email.split('@')[0],
+          email
+        };
+        localStorage.setItem('jwt_token', 'sample_jwt_token_' + Date.now());
+        localStorage.setItem('user', JSON.stringify(state.user));
+        state.isLoading = false;
+        showToast('Login successful! Welcome back.');
+        navigate('dashboard');
+      } else {
+        state.isLoading = false;
+        showToast('Invalid credentials. Please try again.', 'error');
+        render();
+      }
+    };
+
+    const handleRegister = async (name, email, password) => {
+      state.isLoading = true;
+      render();
+
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Save user via Data SDK
+      if (window.dataSdk) {
+        const result = await window.dataSdk.create({
+          id: 'user_' + Date.now(),
+          type: 'user',
+          name: name,
+          email: email,
+          password: password,
+          createdAt: new Date().toISOString()
+        });
+
+        if (result.isOk) {
+          state.isLoading = false;
+          showToast('Registration successful! Please login.');
+          navigate('login');
+        } else {
+          state.isLoading = false;
+          showToast('Registration failed. Please try again.', 'error');
+          render();
+        }
+      } else {
+        state.isLoading = false;
+        showToast('Registration successful! Please login.');
+        navigate('login');
+      }
+    };
+
+    const handleLogout = () => {
+      state.isAuthenticated = false;
+      state.user = null;
+      localStorage.removeItem('jwt_token');
+      localStorage.removeItem('user');
+      showToast('Logged out successfully.');
+      navigate('home');
+    };
+
+    // --- Filter Functions ---
+    const applyFilters = async () => {
+
+      // If backend API is configured → use backend
+      if (state.apiEndpoint) {
+        await apiService.fetchProperties(state.filters);
+        state.mobileFiltersOpen = false;
+        return;
+      }
+
+      // Fallback to local filtering (if no backend)
+      let filtered = [...sampleProperties];
+
+      if (state.filters.city) {
+        filtered = filtered.filter(p =>
+          p.city.toLowerCase().includes(state.filters.city.toLowerCase()) ||
+          p.area.toLowerCase().includes(state.filters.city.toLowerCase())
+        );
+      }
+
+      state.filteredProperties = filtered;
+      state.mobileFiltersOpen = false;
+      render();
+    };
+
+    const resetFilters = () => {
+      state.filters = {
+        city: '',
+        budgetMin: 0,
+        budgetMax: 100000,
+        income: '',
+        propertyType: 'all',
+        bhk: 'all',
+        amenities: [],
+        loanEligibility: false,
+        governmentScheme: ''
+      };
+      state.filteredProperties = [...sampleProperties];
+      render();
+    };
+
+    // --- Component Renderers ---
+    const renderNavbar = () => `
+      <nav class="sticky top-0 z-50 glass-effect border-b border-gray-200 dark:border-gray-700 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div class="flex justify-between items-center h-16">
+            <!-- Logo -->
+            <div class="flex items-center cursor-pointer" onclick="navigate('home')">
+              <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg">
+                <span class="text-white text-xl">🏠</span>
+              </div>
+              <span class="ml-3 text-lg font-bold text-gray-900 dark:text-white hidden sm:block">
+                Affordable Housing
+              </span>
+            </div>
+            
+            <!-- Desktop Navigation -->
+            <div class="hidden md:flex items-center space-x-1">
+              <button onclick="navigate('home')" class="px-4 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors font-medium ${state.currentPage === 'home' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : ''}">
+                Home
+              </button>
+              <button onclick="navigate('dashboard')" class="px-4 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors font-medium ${state.currentPage === 'dashboard' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : ''}">
+                Search
+              </button>
+              ${state.isAuthenticated ? `
+                <div class="flex items-center ml-4 pl-4 border-l border-gray-200 dark:border-gray-700">
+                  <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-sm font-bold">
+                    ${state.user?.name?.charAt(0).toUpperCase() || 'U'}
+                  </div>
+                  <span class="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">${state.user?.name || 'User'}</span>
+                  <button onclick="handleLogout()" class="ml-4 px-4 py-2 rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors text-sm font-medium">
+                    Logout
+                  </button>
+                </div>
+              ` : `
+                <button onclick="navigate('login')" class="px-4 py-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors font-medium">
+                  Login
+                </button>
+                <button onclick="navigate('register')" class="ml-2 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium shadow-md hover:shadow-lg">
+                  Register
+                </button>
+              `}
+            </div>
+            
+            <!-- Right Side Actions -->
+            <div class="flex items-center space-x-2">
+              <button onclick="toggleDarkMode()" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="Toggle dark mode">
+                ${state.darkMode ? '☀️' : '🌙'}
+              </button>
+              
+              <!-- Mobile Menu Button -->
+              <button onclick="state.mobileMenuOpen = !state.mobileMenuOpen; render();" class="md:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                <svg class="w-6 h-6 text-gray-700 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  ${state.mobileMenuOpen ?
+        '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>' :
+        '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>'
+      }
+                </svg>
+              </button>
+            </div>
+          </div>
+          
+          <!-- Mobile Menu -->
+          ${state.mobileMenuOpen ? `
+            <div class="md:hidden py-4 border-t border-gray-200 dark:border-gray-700 animate-slide-down">
+              <div class="flex flex-col space-y-2">
+                <button onclick="navigate('home')" class="px-4 py-3 rounded-lg text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors font-medium">
+                  🏠 Home
+                </button>
+                <button onclick="navigate('dashboard')" class="px-4 py-3 rounded-lg text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors font-medium">
+                  🔍 Search Properties
+                </button>
+                ${state.isAuthenticated ? `
+                  <div class="px-4 py-3 flex items-center border-t border-gray-200 dark:border-gray-700 mt-2 pt-4">
+                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold">
+                      ${state.user?.name?.charAt(0).toUpperCase() || 'U'}
+                    </div>
+                    <div class="ml-3">
+                      <div class="font-medium text-gray-900 dark:text-white">${state.user?.name || 'User'}</div>
+                      <div class="text-sm text-gray-500 dark:text-gray-400">${state.user?.email || ''}</div>
+                    </div>
+                  </div>
+                  <button onclick="handleLogout()" class="px-4 py-3 rounded-lg text-left text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors font-medium">
+                    🚪 Logout
+                  </button>
+                ` : `
+                  <button onclick="navigate('login')" class="px-4 py-3 rounded-lg text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors font-medium">
+                    🔐 Login
+                  </button>
+                  <button onclick="navigate('register')" class="px-4 py-3 rounded-lg text-left bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium">
+                    ✨ Register
+                  </button>
+                `}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      </nav>
+    `;
+
+    const renderFooter = () => `
+      <footer class="bg-gray-900 text-white mt-auto">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
+            <!-- Brand -->
+            <div class="col-span-1 md:col-span-2">
+              <div class="flex items-center mb-4">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center">
+                  <span class="text-white text-xl">🏠</span>
+                </div>
+                <span class="ml-3 text-xl font-bold">Affordable Housing Finder</span>
+              </div>
+              <p class="text-gray-400 max-w-md">
+                Making home ownership and rental accessible for everyone. Find properties that match your budget and lifestyle with our intelligent recommendation system.
+              </p>
+              <div class="flex space-x-4 mt-6">
+                <a href="#" class="w-10 h-10 rounded-full bg-gray-800 hover:bg-blue-600 flex items-center justify-center transition-colors">
+                  <span>📘</span>
+                </a>
+                <a href="#" class="w-10 h-10 rounded-full bg-gray-800 hover:bg-blue-400 flex items-center justify-center transition-colors">
+                  <span>🐦</span>
+                </a>
+                <a href="#" class="w-10 h-10 rounded-full bg-gray-800 hover:bg-pink-600 flex items-center justify-center transition-colors">
+                  <span>📷</span>
+                </a>
+                <a href="#" class="w-10 h-10 rounded-full bg-gray-800 hover:bg-blue-700 flex items-center justify-center transition-colors">
+                  <span>💼</span>
+                </a>
+              </div>
+            </div>
+            
+            <!-- Quick Links -->
+            <div>
+              <h3 class="text-lg font-semibold mb-4">Quick Links</h3>
+              <ul class="space-y-2">
+                <li><a href="#" onclick="navigate('home'); return false;" class="text-gray-400 hover:text-white transition-colors">Home</a></li>
+                <li><a href="#" onclick="navigate('dashboard'); return false;" class="text-gray-400 hover:text-white transition-colors">Search Properties</a></li>
+                <li><a href="#" class="text-gray-400 hover:text-white transition-colors">About Us</a></li>
+                <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Contact</a></li>
+              </ul>
+            </div>
+            
+            <!-- Contact -->
+            <div>
+              <h3 class="text-lg font-semibold mb-4">Contact Us</h3>
+              <ul class="space-y-2 text-gray-400">
+                <li class="flex items-center">
+                  <span class="mr-2">📍</span>
+                  123 Tech Park, Bangalore
+                </li>
+                <li class="flex items-center">
+                  <span class="mr-2">📧</span>
+                  hello@affordablehousing.in
+                </li>
+                <li class="flex items-center">
+                  <span class="mr-2">📞</span>
+                  +91 98765 43210
+                </li>
+              </ul>
+            </div>
+          </div>
+          
+          <div class="border-t border-gray-800 mt-8 pt-8 text-center text-gray-500">
+            <p>&copy; ${new Date().getFullYear()} Affordable Housing Finder. All rights reserved.</p>
+          </div>
+        </div>
+      </footer>
+    `;
+
+    const renderPropertyCard = (property) => `
+      <div class="card-hover bg-white dark:bg-gray-800 rounded-2xl overflow-hidden shadow-lg border border-gray-100 dark:border-gray-700">
+        <div class="relative">
+          <img 
+            src="${property.image}" 
+            alt="${property.title}"
+            loading="lazy"
+            onerror="this.style.background='linear-gradient(135deg, #667eea 0%, #764ba2 100%)'; this.alt='Image unavailable';"
+            class="w-full h-48 object-cover"
+          />
+          <div class="absolute top-3 left-3">
+            <span class="px-3 py-1 rounded-full text-xs font-semibold ${property.type === 'rent' ? 'bg-green-500 text-white' : 'bg-blue-500 text-white'}">
+              ${property.type === 'rent' ? 'For Rent' : 'For Sale'}
+            </span>
+          </div>
+          <div class="absolute top-3 right-3">
+            <button class="w-8 h-8 rounded-full bg-white/90 dark:bg-gray-800/90 flex items-center justify-center hover:bg-white dark:hover:bg-gray-800 transition-colors shadow-md">
+              ❤️
+            </button>
+          </div>
+        </div>
+        <div class="p-5">
+          <div class="flex justify-between items-start mb-2">
+            <h3 class="font-bold text-lg text-gray-900 dark:text-white line-clamp-1">${property.title}</h3>
+          </div>
+          <p class="text-2xl font-bold text-blue-600 dark:text-blue-400 mb-2">
+            ${formatPrice(property.price, property.type)}
+          </p>
+          <p class="text-gray-500 dark:text-gray-400 text-sm flex items-center mb-3">
+            <span class="mr-1">📍</span>
+            ${property.area}, ${property.city}
+          </p>
+          <div class="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400 mb-4">
+            <span class="flex items-center">
+              <span class="mr-1">🛏️</span>
+              ${property.bhk} BHK
+            </span>
+            <span class="flex items-center">
+              <span class="mr-1">📐</span>
+              ${property.sqft} sqft
+            </span>
+          </div>
+          <div class="flex flex-wrap gap-1 mb-4">
+            ${property.amenities.slice(0, 3).map(a => `
+              <span class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-md text-xs text-gray-600 dark:text-gray-400">
+                ${getAmenityIcon(a)} ${getAmenityLabel(a)}
+              </span>
+            `).join('')}
+            ${property.amenities.length > 3 ? `
+              <span class="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-md text-xs text-gray-600 dark:text-gray-400">
+                +${property.amenities.length - 3} more
+              </span>
+            ` : ''}
+          </div>
+          <button 
+            onclick="navigate('property-details', sampleProperties.find(p => p.id === '${property.id}'))"
+            class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors btn-hover"
+          >
+            View Details
+          </button>
+        </div>
+      </div>
+    `;
+
+    const renderFilterPanel = () => `
+      <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 p-6">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-xl font-bold text-gray-900 dark:text-white">Filters</h2>
+          <button onclick="resetFilters()" class="text-sm text-blue-600 hover:text-blue-700 font-medium">
+            Reset All
+          </button>
+        </div>
+        
+        <!-- City -->
+        <div class="mb-5">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">City / Location</label>
+          <input 
+            type="text" 
+            id="filter-city"
+            value="${state.filters.city}"
+            oninput="state.filters.city = this.value"
+            placeholder="e.g., Bangalore, Koramangala"
+            class="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+          />
+        </div>
+        
+        <!-- Monthly Income -->
+        <div class="mb-5">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Monthly Income (₹)</label>
+          <input 
+            type="number" 
+            id="filter-income"
+            value="${state.filters.income}"
+            oninput="state.filters.income = this.value"
+            placeholder="e.g., 50000"
+            class="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+          />
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">We recommend rent ≤ 30% of income</p>
+          ${state.filters.income ? `
+            <div class="mt-3 p-3 rounded-lg ${checkPMAYEligibility(state.filters.income * 12) ? 'bg-green-100 dark:bg-green-900/30' : 'bg-blue-100 dark:bg-blue-900/30'}">
+              <p class="text-xs font-medium ${checkPMAYEligibility(state.filters.income * 12) ? 'text-green-700 dark:text-green-400' : 'text-blue-700 dark:text-blue-400'}">
+                ${checkPMAYEligibility(state.filters.income * 12)
+          ? '🏛️ PMAY Eligible! Annual income < ₹6 Lac'
+          : '📊 Annual income: ' + formatAnnualIncome(state.filters.income)
+        }
+              </p>
+              <p class="text-xs mt-1 ${checkPMAYEligibility(state.filters.income * 12) ? 'text-green-600 dark:text-green-300' : 'text-blue-600 dark:text-blue-300'}">
+                Max affordable rent: ${formatPrice(getMaxAffordableRent(state.filters.income), 'rent')}
+              </p>
+            </div>
+          ` : ''}
+        </div>
+        
+        <!-- Loan Eligibility Filter -->
+        <div class="mb-5 p-4 rounded-xl bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800">
+          <label class="flex items-center cursor-pointer">
+            <input 
+              type="checkbox" 
+              ${state.filters.loanEligibility ? 'checked' : ''}
+              onchange="state.filters.loanEligibility = this.checked; render();"
+              class="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+            />
+            <span class="ml-3 text-sm font-medium text-gray-700 dark:text-gray-300">
+              💳 Show loan-friendly properties
+            </span>
+          </label>
+          <p class="text-xs text-gray-600 dark:text-gray-400 mt-2 ml-7">
+            Properties with banks & loan support
+          </p>
+        </div>
+        
+        <!-- Government Schemes -->
+        <div class="mb-5">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">🏛️ Government Schemes</label>
+          <select 
+            id="filter-scheme"
+            onchange="state.filters.governmentScheme = this.value; render();"
+            class="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+          >
+            <option value="">No Preference</option>
+            <option value="pmay" ${state.filters.governmentScheme === 'pmay' ? 'selected' : ''}>PMAY - Pradhan Mantri Awas</option>
+            <option value="clss" ${state.filters.governmentScheme === 'clss' ? 'selected' : ''}>CLSS - Credit Linked Subsidy</option>
+            <option value="ews" ${state.filters.governmentScheme === 'ews' ? 'selected' : ''}>EWS - Economically Weaker</option>
+            <option value="lig" ${state.filters.governmentScheme === 'lig' ? 'selected' : ''}>LIG - Low Income Group</option>
+          </select>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            💡 Tip: You may qualify for govt subsidies & lower interest rates
+          </p>
+        </div>
+        
+        <!-- Budget Range -->
+        <div class="mb-5">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Budget Range</label>
+          <div class="grid grid-cols-2 gap-3">
+            <input 
+              type="number" 
+              id="filter-budget-min"
+              value="${state.filters.budgetMin || ''}"
+              oninput="state.filters.budgetMin = parseInt(this.value) || 0"
+              placeholder="Min"
+              class="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            />
+            <input 
+              type="number" 
+              id="filter-budget-max"
+              value="${state.filters.budgetMax === 100000 ? '' : state.filters.budgetMax}"
+              oninput="state.filters.budgetMax = parseInt(this.value) || 100000000"
+              placeholder="Max"
+              class="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            />
+          </div>
+        </div>
+        
+        <!-- Property Type -->
+        <div class="mb-5">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Property Type</label>
+          <select 
+            id="filter-type"
+            onchange="state.filters.propertyType = this.value"
+            class="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+          >
+            <option value="all" ${state.filters.propertyType === 'all' ? 'selected' : ''}>All Types</option>
+            <option value="rent" ${state.filters.propertyType === 'rent' ? 'selected' : ''}>For Rent</option>
+            <option value="buy" ${state.filters.propertyType === 'buy' ? 'selected' : ''}>For Sale</option>
+          </select>
+        </div>
+        
+        <!-- BHK -->
+        <div class="mb-5">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">BHK</label>
+          <div class="flex flex-wrap gap-2">
+            ${['all', '1', '2', '3', '4'].map(bhk => `
+              <button 
+                onclick="state.filters.bhk = '${bhk}'; render();"
+                class="px-4 py-2 rounded-lg text-sm font-medium transition-colors ${state.filters.bhk === bhk ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}"
+              >
+                ${bhk === 'all' ? 'Any' : bhk + ' BHK'}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+        
+        <!-- Amenities -->
+        <div class="mb-6">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Amenities</label>
+          <div class="grid grid-cols-2 gap-2">
+            ${['parking', 'gym', 'security', 'lift', 'swimming-pool', 'power-backup'].map(amenity => `
+              <label class="flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
+                <input 
+                  type="checkbox" 
+                  ${state.filters.amenities.includes(amenity) ? 'checked' : ''}
+                  onchange="
+                    if (this.checked) {
+                      state.filters.amenities.push('${amenity}');
+                    } else {
+                      state.filters.amenities = state.filters.amenities.filter(a => a !== '${amenity}');
+                    }
+                  "
+                  class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                  ${getAmenityIcon(amenity)} ${getAmenityLabel(amenity)}
+                </span>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+        
+        <button 
+          onclick="applyFilters()"
+          class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors btn-hover"
+        >
+          🔍 Search Properties
+        </button>
+      </div>
+    `;
+
+    // --- Page Renderers ---
+    const renderHomePage = () => `
+      <div class="animate-fade-in">
+        <!-- Hero Section -->
+        <section class="relative overflow-hidden">
+          <div class="absolute inset-0 bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800"></div>
+          <div class="absolute inset-0 opacity-10">
+            <div class="absolute inset-0" style="background-image: url('data:image/svg+xml,%3Csvg width=\"60\" height=\"60\" viewBox=\"0 0 60 60\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cg fill=\"none\" fill-rule=\"evenodd\"%3E%3Cg fill=\"%23ffffff\" fill-opacity=\"0.4\"%3E%3Cpath d=\"M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E');"></div>
+          </div>
+          <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 lg:py-32">
+            <div class="text-center">
+              <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold text-white mb-6 animate-slide-up" id="hero-title">
+                ${config.hero_title}
+              </h1>
+              <p class="text-xl text-blue-100 max-w-2xl mx-auto mb-10 animate-slide-up" style="animation-delay: 0.1s" id="hero-subtitle">
+                ${config.hero_subtitle}
+              </p>
+              
+              <!-- Search Bar -->
+              <div class="max-w-3xl mx-auto animate-slide-up" style="animation-delay: 0.2s">
+                <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-4 sm:p-6">
+                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 text-left">City</label>
+                      <input 
+                        type="text" 
+                        id="search-city"
+                        value="${state.searchQuery.city}"
+                        oninput="state.searchQuery.city = this.value"
+                        placeholder="Enter city name"
+                        class="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 text-left">Monthly Income (₹)</label>
+                      <input 
+                        type="number" 
+                        id="search-income"
+                        value="${state.searchQuery.income}"
+                        oninput="state.searchQuery.income = this.value"
+                        placeholder="Your monthly income"
+                        class="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      ${state.searchQuery.income ? `
+                        <div class="mt-1 text-xs ${checkPMAYEligibility(state.searchQuery.income * 12) ? 'text-green-600' : 'text-blue-600'}">
+                          ${checkPMAYEligibility(state.searchQuery.income * 12) ? '🏛️ PMAY Eligible!' : '📊 ' + formatAnnualIncome(state.searchQuery.income)}
+                        </div>
+                      ` : ''}
+                    </div>
+                    <div class="flex items-end">
+                      <button 
+                        onclick="state.filters.city = state.searchQuery.city; state.filters.income = state.searchQuery.income; navigate('dashboard'); applyFilters();"
+                        class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors btn-hover flex items-center justify-center"
+                      >
+                        <span class="mr-2">🔍</span>
+                        Search
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Stats -->
+              <div class="grid grid-cols-3 gap-4 max-w-xl mx-auto mt-12 animate-slide-up" style="animation-delay: 0.3s">
+                <div class="text-center">
+                  <div class="text-3xl font-bold text-white">500+</div>
+                  <div class="text-blue-200 text-sm">Properties</div>
+                </div>
+                <div class="text-center">
+                  <div class="text-3xl font-bold text-white">50+</div>
+                  <div class="text-blue-200 text-sm">Cities</div>
+                </div>
+                <div class="text-center">
+                  <div class="text-3xl font-bold text-white">10K+</div>
+                  <div class="text-blue-200 text-sm">Happy Users</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Wave SVG -->
+          <div class="absolute bottom-0 left-0 right-0">
+            <svg viewBox="0 0 1440 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M0 120L60 110C120 100 240 80 360 70C480 60 600 60 720 65C840 70 960 80 1080 85C1200 90 1320 90 1380 90L1440 90V120H1380C1320 120 1200 120 1080 120C960 120 840 120 720 120C600 120 480 120 360 120C240 120 120 120 60 120H0Z" fill="${state.darkMode ? '#111827' : '#f9fafb'}"/>
+            </svg>
+          </div>
+        </section>
+        
+        <!-- How It Works -->
+        <section class="py-20 bg-gray-50 dark:bg-gray-900">
+          <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+              <h2 class="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-4">How It Works</h2>
+              <p class="text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">Finding your affordable dream home is just three simple steps away</p>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+              ${[
+        { icon: '🔍', title: 'Search', desc: 'Enter your city and monthly income to get personalized property recommendations' },
+        { icon: '🏠', title: 'Explore', desc: 'Browse through affordable properties that match your budget and preferences' },
+        { icon: '📞', title: 'Connect', desc: 'Contact property owners directly and schedule visits at your convenience' }
+      ].map((step, index) => `
+                <div class="relative animate-slide-up" style="animation-delay: ${index * 0.1}s">
+                  <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 text-center shadow-lg border border-gray-100 dark:border-gray-700 card-hover">
+                    <div class="w-16 h-16 mx-auto mb-6 rounded-2xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-3xl">
+                      ${step.icon}
+                    </div>
+                    <div class="absolute -top-3 left-1/2 transform -translate-x-1/2 w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold">
+                      ${index + 1}
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-3">${step.title}</h3>
+                    <p class="text-gray-600 dark:text-gray-400">${step.desc}</p>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </section>
+        
+        <!-- Featured Properties -->
+        <section class="py-20 bg-white dark:bg-gray-800">
+          <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center mb-12">
+              <div>
+                <h2 class="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-2">Featured Properties</h2>
+                <p class="text-gray-600 dark:text-gray-400">Hand-picked affordable homes for you</p>
+              </div>
+              <button 
+                onclick="navigate('dashboard')"
+                class="hidden sm:flex items-center text-blue-600 hover:text-blue-700 font-medium"
+              >
+                View All
+                <svg class="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+              </button>
+            </div>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              ${sampleProperties.slice(0, 6).map((property, index) => `
+                <div class="animate-slide-up" style="animation-delay: ${index * 0.1}s">
+                  ${renderPropertyCard(property)}
+                </div>
+              `).join('')}
+            </div>
+            
+            <div class="text-center mt-10 sm:hidden">
+              <button 
+                onclick="navigate('dashboard')"
+                class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors btn-hover"
+              >
+                View All Properties
+              </button>
+            </div>
+          </div>
+        </section>
+        
+        <!-- CTA Section -->
+        <section class="py-20 bg-gradient-to-br from-blue-600 to-indigo-700">
+          <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <h2 class="text-3xl sm:text-4xl font-bold text-white mb-6">Ready to Find Your Dream Home?</h2>
+            <p class="text-blue-100 text-lg mb-8 max-w-2xl mx-auto">
+              Join thousands of happy users who found their perfect affordable home through our platform.
+            </p>
+            <div class="flex flex-col sm:flex-row gap-4 justify-center">
+              <button 
+                onclick="navigate('register')"
+                class="px-8 py-4 bg-white text-blue-600 font-semibold rounded-xl hover:bg-blue-50 transition-colors btn-hover shadow-lg"
+              >
+                Get Started Free
+              </button>
+              <button 
+                onclick="navigate('dashboard')"
+                class="px-8 py-4 bg-blue-500 text-white font-semibold rounded-xl hover:bg-blue-400 transition-colors btn-hover"
+              >
+                Browse Properties
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    `;
+
+    const renderLoginPage = () => `
+      <div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-gray-50 dark:bg-gray-900 animate-fade-in">
+        <div class="max-w-md w-full">
+          <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 border border-gray-100 dark:border-gray-700">
+            <div class="text-center mb-8">
+              <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-3xl shadow-lg">
+                🏠
+              </div>
+              <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Welcome Back</h2>
+              <p class="text-gray-600 dark:text-gray-400 mt-2">Sign in to access your account</p>
+            </div>
+            
+            <form onsubmit="event.preventDefault(); handleLogin(document.getElementById('login-email').value, document.getElementById('login-password').value);">
+              <div class="space-y-5">
+                <div>
+                  <label for="login-email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email Address</label>
+                  <input 
+                    type="email" 
+                    id="login-email"
+                    required
+                    placeholder="you@example.com"
+                    class="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  />
+                </div>
+                <div>
+                  <label for="login-password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
+                  <input 
+                    type="password" 
+                    id="login-password"
+                    required
+                    minlength="6"
+                    placeholder="••••••••"
+                    class="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  />
+                </div>
+                <div class="flex items-center justify-between">
+                  <label class="flex items-center">
+                    <input type="checkbox" class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                    <span class="ml-2 text-sm text-gray-600 dark:text-gray-400">Remember me</span>
+                  </label>
+                  <a href="#" class="text-sm text-blue-600 hover:text-blue-700 font-medium">Forgot password?</a>
+                </div>
+                <button 
+                  type="submit"
+                  class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors btn-hover flex items-center justify-center"
+                  ${state.isLoading ? 'disabled' : ''}
+                >
+                  ${state.isLoading ? '<div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full spinner mr-2"></div> Signing in...' : 'Sign In'}
+                </button>
+              </div>
+            </form>
+            
+            <div class="mt-6 text-center">
+              <p class="text-gray-600 dark:text-gray-400">
+                Don't have an account? 
+                <button onclick="navigate('register')" class="text-blue-600 hover:text-blue-700 font-medium">Register here</button>
+              </p>
+            </div>
+            
+            <div class="mt-6">
+              <div class="relative">
+                <div class="absolute inset-0 flex items-center">
+                  <div class="w-full border-t border-gray-200 dark:border-gray-700"></div>
+                </div>
+                
+                <div class="relative flex justify-center text-sm">
+                  <span class="px-2 bg-white dark:bg-gray-800 text-gray-500">Or continue with</span>
+                </div>
+              </div>
+              
+              <div class="mt-6 grid grid-cols-2 gap-4">
+                <button class="flex items-center justify-center px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                  <span class="mr-2">🌐</span>
+                  Google
+                </button>
+                <button class="flex items-center justify-center px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                  <span class="mr-2">📘</span>
+                  Facebook
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const renderRegisterPage = () => `
+      <div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-gray-50 dark:bg-gray-900 animate-fade-in">
+        <div class="max-w-md w-full">
+          <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 border border-gray-100 dark:border-gray-700">
+            <div class="text-center mb-8">
+              <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-3xl shadow-lg">
+                ✨
+              </div>
+              <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Create Account</h2>
+              <p class="text-gray-600 dark:text-gray-400 mt-2">Start your journey to finding affordable housing</p>
+            </div>
+            
+            <form onsubmit="event.preventDefault(); const name = document.getElementById('register-name').value; const email = document.getElementById('register-email').value; const password = document.getElementById('register-password').value; const confirm = document.getElementById('register-confirm').value; if(password !== confirm) { showToast('Passwords do not match', 'error'); return; } handleRegister(name, email, password);">
+              <div class="space-y-5">
+                <div>
+                  <label for="register-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Full Name</label>
+                  <input 
+                    type="text" 
+                    id="register-name"
+                    required
+                    placeholder="John Doe"
+                    class="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  />
+                </div>
+                <div>
+                  <label for="register-email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email Address</label>
+                  <input 
+                    type="email" 
+                    id="register-email"
+                    required
+                    placeholder="you@example.com"
+                    class="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  />
+                </div>
+                <div>
+                  <label for="register-password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
+                  <input 
+                    type="password" 
+                    id="register-password"
+                    required
+                    minlength="6"
+                    placeholder="••••••••"
+                    class="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  />
+                </div>
+                <div>
+                  <label for="register-confirm" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Confirm Password</label>
+                  <input 
+                    type="password" 
+                    id="register-confirm"
+                    required
+                    minlength="6"
+                    placeholder="••••••••"
+                    class="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  />
+                </div>
+                <div class="flex items-start">
+                  <input type="checkbox" required class="w-4 h-4 mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  <span class="ml-2 text-sm text-gray-600 dark:text-gray-400">
+                    I agree to the <a href="#" class="text-blue-600 hover:text-blue-700">Terms of Service</a> and <a href="#" class="text-blue-600 hover:text-blue-700">Privacy Policy</a>
+                  </span>
+                </div>
+                <button 
+                  type="submit"
+                  class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors btn-hover flex items-center justify-center"
+                  ${state.isLoading ? 'disabled' : ''}
+                >
+                  ${state.isLoading ? '<div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full spinner mr-2"></div> Creating account...' : 'Create Account'}
+                </button>
+              </div>
+            </form>
+            
+            <div class="mt-6 text-center">
+              <p class="text-gray-600 dark:text-gray-400">
+                Already have an account? 
+                <button onclick="navigate('login')" class="text-blue-600 hover:text-blue-700 font-medium">Sign in</button>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const renderDashboardPage = () => `
+      <div class="animate-fade-in">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <!-- Header -->
+          <div class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Find Properties</h1>
+            <p class="text-gray-600 dark:text-gray-400">Showing ${state.filteredProperties.length} properties</p>
+          </div>
+          
+          <!-- Mobile Filter Toggle -->
+          <div class="lg:hidden mb-4">
+            <button 
+              onclick="state.mobileFiltersOpen = !state.mobileFiltersOpen; render();"
+              class="w-full py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex items-center justify-center text-gray-700 dark:text-gray-300 font-medium"
+            >
+              <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
+              </svg>
+              ${state.mobileFiltersOpen ? 'Hide Filters' : 'Show Filters'}
+            </button>
+          </div>
+          
+          <div class="flex flex-col lg:flex-row gap-8">
+            <!-- Filter Panel -->
+            <div class="lg:w-80 flex-shrink-0 ${state.mobileFiltersOpen ? 'block' : 'hidden lg:block'}">
+              ${renderFilterPanel()}
+            </div>
+            
+            <!-- Main Content -->
+            <div class="flex-1">
+              <!-- Properties Grid -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6 mb-8">
+                ${state.filteredProperties.length > 0 ?
+        state.filteredProperties.map((property, index) => `
+                    <div class="animate-slide-up" style="animation-delay: ${index * 0.05}s">
+                      ${renderPropertyCard(property)}
+                    </div>
+                  `).join('') :
+        `
+                  <div class="col-span-full text-center py-16">
+                    <div class="w-24 h-24 mx-auto mb-6 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-5xl">
+                      🏚️
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">No Properties Found</h3>
+                    <p class="text-gray-600 dark:text-gray-400 mb-6">Try adjusting your filters to see more results</p>
+                    <button onclick="resetFilters()" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors">
+                      Reset Filters
+                    </button>
+                  </div>
+                  `
+      }
+              </div>
+              
+              <!-- Map Section -->
+              <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
+                <div class="p-4 border-b border-gray-100 dark:border-gray-700">
+                  <h3 class="font-bold text-gray-900 dark:text-white">Properties on Map</h3>
+                </div>
+                <div id="dashboard-map" class="h-80 w-full"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const renderPropertyDetailsPage = () => {
+      const property = state.selectedProperty;
+      if (!property) {
+        navigate('dashboard');
+        return '';
+      }
+
+      return `
+        <div class="animate-fade-in">
+          <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <!-- Back Button -->
+            <button 
+              onclick="navigate('dashboard')"
+              class="mb-6 flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+            >
+              <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+              </svg>
+              Back to Search
+            </button>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <!-- Main Content -->
+              <div class="lg:col-span-2 space-y-6">
+                <!-- Image Gallery -->
+                <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
+                  <img 
+                    src="${property.image}" 
+                    alt="${property.title}"
+                    loading="lazy"
+                    onerror="this.style.background='linear-gradient(135deg, #667eea 0%, #764ba2 100%)'; this.alt='Image unavailable';"
+                    class="w-full h-64 sm:h-96 object-cover"
+                  />
+                  ${property.images && property.images.length > 1 ? `
+                    <div class="p-4 grid grid-cols-4 gap-2">
+                      ${property.images.slice(0, 4).map((img, index) => `
+                        <img 
+                          src="${img}" 
+                          alt="Gallery ${index + 1}"
+                          loading="lazy"
+                          onerror="this.style.background='#e5e7eb'; this.alt='Image unavailable';"
+                          class="h-20 w-full object-cover rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
+                        />
+                      `).join('')}
+                    </div>
+                  ` : ''}
+                </div>
+                
+                <!-- Property Info -->
+                <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 p-6">
+                  <div class="flex flex-wrap items-start justify-between gap-4 mb-4">
+                    <div>
+                      <span class="inline-block px-3 py-1 rounded-full text-sm font-semibold mb-2 ${property.type === 'rent' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}">
+                        ${property.type === 'rent' ? 'For Rent' : 'For Sale'}
+                      </span>
+                      <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">${property.title}</h1>
+                      <p class="text-gray-500 dark:text-gray-400 flex items-center mt-2">
+                        <span class="mr-2">📍</span>
+                        ${property.area}, ${property.city}
+                      </p>
+                    </div>
+                    <div class="text-right">
+                      <p class="text-3xl font-bold text-blue-600 dark:text-blue-400">
+                        ${formatPrice(property.price, property.type)}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div class="grid grid-cols-3 gap-4 py-6 border-y border-gray-100 dark:border-gray-700">
+                    <div class="text-center">
+                      <div class="text-2xl mb-1">🛏️</div>
+                      <div class="font-bold text-gray-900 dark:text-white">${property.bhk} BHK</div>
+                      <div class="text-sm text-gray-500 dark:text-gray-400">Bedrooms</div>
+                    </div>
+                    <div class="text-center">
+                      <div class="text-2xl mb-1">📐</div>
+                      <div class="font-bold text-gray-900 dark:text-white">${property.sqft}</div>
+                      <div class="text-sm text-gray-500 dark:text-gray-400">Sq. Ft.</div>
+                    </div>
+                    <div class="text-center">
+                      <div class="text-2xl mb-1">🏢</div>
+                      <div class="font-bold text-gray-900 dark:text-white">${property.type === 'rent' ? 'Rental' : 'Purchase'}</div>
+                      <div class="text-sm text-gray-500 dark:text-gray-400">Type</div>
+                    </div>
+                  </div>
+                  
+                  <div class="mt-6">
+                    <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-3">Description</h3>
+                    <p class="text-gray-600 dark:text-gray-400 leading-relaxed">${property.description}</p>
+                  </div>
+                </div>
+                
+                <!-- Amenities -->
+                <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 p-6">
+                  <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Amenities</h3>
+                  <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    ${property.amenities.map(amenity => `
+                      <div class="flex items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-xl">
+                        <span class="text-xl mr-3">${getAmenityIcon(amenity)}</span>
+                        <span class="text-gray-700 dark:text-gray-300">${getAmenityLabel(amenity)}</span>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+                
+                <!-- Map -->
+                <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
+                  <div class="p-4 border-b border-gray-100 dark:border-gray-700">
+                    <h3 class="font-bold text-gray-900 dark:text-white">Location</h3>
+                  </div>
+                  <div id="property-map" class="h-80 w-full"></div>
+                </div>
+              </div>
+              
+              <!-- Sidebar -->
+              <div class="space-y-6">
+                <!-- Contact Card -->
+                <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 p-6 sticky top-24">
+                  <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4">Contact Owner</h3>
+                  <div class="flex items-center mb-6">
+                    <div class="w-14 h-14 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xl font-bold">
+                      ${property.contactName.charAt(0)}
+                    </div>
+                    <div class="ml-4">
+                      <div class="font-semibold text-gray-900 dark:text-white">${property.contactName}</div>
+                      <div class="text-sm text-gray-500 dark:text-gray-400">Property Owner</div>
+                    </div>
+                  </div>
+                  
+                  <div class="space-y-3 mb-6">
+                    <a href="tel:${property.contactPhone}" class="flex items-center p-3 bg-gray-50 dark:bg-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
+                      <span class="text-xl mr-3">📞</span>
+                      <span class="text-gray-700 dark:text-gray-300">${property.contactPhone}</span>
+                    </a>
+                  </div>
+                  
+                  <button class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors btn-hover mb-3">
+                    📞 Call Now
+                  </button>
+                  <button class="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl transition-colors btn-hover">
+                    💬 WhatsApp
+                  </button>
+                </div>
+                
+                <!-- Affordability Calculator -->
+                <div class="space-y-4">
+                  <div class="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl shadow-lg p-6 text-white">
+                    <h3 class="text-lg font-bold mb-4">💡 Affordability Guide</h3>
+                    <p class="text-blue-100 text-sm mb-4">
+                      ${property.type === 'rent' ? 'Based on the 30% rule, your monthly income should be at least:' : 'To comfortably purchase via EMI (30% rule), your monthly income should be at least:'}
+                    </p>
+                    <div class="text-3xl font-bold">
+                      ${property.type === 'rent'
+          ? formatPrice(Math.ceil(property.price / 0.3), 'rent').replace('/mo', '')
+          : formatPrice(Math.ceil(property.price / 0.3 / 200), 'rent').replace('/mo', '')
+        }
+                    </div>
+                    <p class="text-blue-200 text-sm mt-1">per month</p>
+                  </div>
+                  
+                  <!-- PMAY Info Card -->
+                  <div class="bg-gradient-to-br from-green-600 to-emerald-700 rounded-2xl shadow-lg p-6 text-white">
+                    <div class="flex items-start gap-3">
+                      <span class="text-2xl">🏛️</span>
+                      <div>
+                        <h3 class="text-lg font-bold mb-2">PMAY Scheme Info</h3>
+                        <p class="text-green-100 text-sm mb-3">
+                          If your annual income is <strong>less than ₹6 Lakhs</strong>, you may be eligible for the Pradhan Mantri Awas Yojana (PMAY) scheme, which offers:
+                        </p>
+                        <ul class="text-green-100 text-sm space-y-1 ml-3">
+                          <li>✓ Low-interest home loans</li>
+                          <li>✓ Subsidy on home purchases</li>
+                          <li>✓ Priority allocation</li>
+                        </ul>
+                        <button class="mt-3 px-4 py-2 bg-white text-green-600 rounded-lg font-medium hover:bg-green-50 transition-colors text-sm">
+                          Learn More About PMAY
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    };
+
+    const renderToast = () => {
+      if (!state.toast) return '';
+
+      const bgColor = state.toast.type === 'error'
+        ? 'bg-red-500'
+        : state.toast.type === 'warning'
+          ? 'bg-yellow-500'
+          : 'bg-green-500';
+
+      return `
+        <div class="fixed bottom-6 right-6 z-50 animate-slide-up">
+          <div class="${bgColor} text-white px-6 py-4 rounded-xl shadow-lg flex items-center">
+            <span class="mr-2">${state.toast.type === 'error' ? '❌' : state.toast.type === 'warning' ? '⚠️' : '✅'}</span>
+            ${state.toast.message}
+          </div>
+        </div>
+      `;
+    };
+
+    const renderLoadingSpinner = () => `
+      <div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-xl">
+          <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full spinner mx-auto mb-4"></div>
+          <p class="text-gray-600 dark:text-gray-400">Loading...</p>
+        </div>
+      </div>
+    `;
+
+    // --- Main Render Function ---
+    const render = () => {
+      let pageContent = '';
+
+      switch (state.currentPage) {
+        case 'home':
+          pageContent = renderHomePage();
+          break;
+        case 'login':
+          pageContent = renderLoginPage();
+          break;
+        case 'register':
+          pageContent = renderRegisterPage();
+          break;
+        case 'dashboard':
+          pageContent = renderDashboardPage();
+          break;
+        case 'property-details':
+          pageContent = renderPropertyDetailsPage();
+          break;
+        default:
+          pageContent = renderHomePage();
+      }
+
+      const app = document.getElementById('app');
+      app.innerHTML = `
+        <div class="min-h-full flex flex-col">
+          ${renderNavbar()}
+          <main class="flex-1">
+            ${pageContent}
+          </main>
+          ${state.currentPage !== 'login' && state.currentPage !== 'register' ? renderFooter() : ''}
+          ${renderToast()}
+        </div>
+      `;
+
+      // Initialize maps after render
+      setTimeout(() => {
+        initializeMaps();
+      }, 100);
+    };
+
+    // --- Map Initialization ---
+    const initializeMaps = () => {
+      // Dashboard Map
+      const dashboardMapEl = document.getElementById('dashboard-map');
+      if (dashboardMapEl && !dashboardMapEl._leaflet_id) {
+        const map = L.map('dashboard-map').setView([12.9716, 77.5946], 11);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        state.filteredProperties.forEach(property => {
+          const marker = L.marker([property.lat, property.lng]).addTo(map);
+          marker.bindPopup(`
+            <div class="text-center p-2">
+              <strong>${property.title}</strong><br>
+              <span class="text-blue-600">${formatPrice(property.price, property.type)}</span>
+            </div>
+          `);
+        });
+      }
+
+      // Property Detail Map
+      const propertyMapEl = document.getElementById('property-map');
+      if (propertyMapEl && !propertyMapEl._leaflet_id && state.selectedProperty) {
+        const map = L.map('property-map').setView([state.selectedProperty.lat, state.selectedProperty.lng], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        L.marker([state.selectedProperty.lat, state.selectedProperty.lng]).addTo(map)
+          .bindPopup(`<strong>${state.selectedProperty.title}</strong>`)
+          .openPopup();
+      }
+    };
+
+    // --- SDK Initialization ---
+    const initializeApp = async () => {
+      // Check for saved login
+      const savedUser = localStorage.getItem('user');
+      const token = localStorage.getItem('jwt_token');
+      if (savedUser && token) {
+        state.isAuthenticated = true;
+        state.user = JSON.parse(savedUser);
+      }
+
+      // Initialize properties
+      state.filteredProperties = [...sampleProperties];
+      apiService.setEndpoint("http://localhost:8080/api");
+
+
+      // Initialize Element SDK
+      if (window.elementSdk) {
+        window.elementSdk.init({
+          defaultConfig,
+          onConfigChange: async (newConfig) => {
+            config = { ...defaultConfig, ...newConfig };
+
+            const heroTitle = document.getElementById('hero-title');
+            if (heroTitle) {
+              heroTitle.textContent = config.hero_title || defaultConfig.hero_title;
+            }
+
+            const heroSubtitle = document.getElementById('hero-subtitle');
+            if (heroSubtitle) {
+              heroSubtitle.textContent = config.hero_subtitle || defaultConfig.hero_subtitle;
+            }
+          },
+          mapToCapabilities: (cfg) => ({
+            recolorables: [
+              {
+                get: () => cfg.background_color || defaultConfig.background_color,
+                set: (value) => {
+                  cfg.background_color = value;
+                  window.elementSdk.setConfig({ background_color: value });
+                }
+              },
+              {
+                get: () => cfg.primary_color || defaultConfig.primary_color,
+                set: (value) => {
+                  cfg.primary_color = value;
+                  window.elementSdk.setConfig({ primary_color: value });
+                }
+              },
+              {
+                get: () => cfg.text_color || defaultConfig.text_color,
+                set: (value) => {
+                  cfg.text_color = value;
+                  window.elementSdk.setConfig({ text_color: value });
+                }
+              },
+              {
+                get: () => cfg.accent_color || defaultConfig.accent_color,
+                set: (value) => {
+                  cfg.accent_color = value;
+                  window.elementSdk.setConfig({ accent_color: value });
+                }
+              }
+            ],
+            borderables: [],
+            fontEditable: undefined,
+            fontSizeable: undefined
+          }),
+          mapToEditPanelValues: (cfg) => new Map([
+            ['hero_title', cfg.hero_title || defaultConfig.hero_title],
+            ['hero_subtitle', cfg.hero_subtitle || defaultConfig.hero_subtitle]
+          ])
+        });
+      }
+
+      // Initialize Data SDK
+      if (window.dataSdk) {
+        const result = await window.dataSdk.init({
+          onDataChanged: (data) => {
+            state.savedProperties = data;
+          }
+        });
+
+        if (!result.isOk) {
+          console.error('Failed to initialize Data SDK');
+        }
+      }
+
+      render();
+    };
+
+    // Initialize the application
+    initializeApp();
+  </script>
+  <script>(function () { function c() { var b = a.contentDocument || a.contentWindow.document; if (b) { var d = b.createElement('script'); d.innerHTML = "window.__CF$cv$params={r:'9d0f503375fb9788',t:'MTc3MTYwNDIzNy4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);"; b.getElementsByTagName('head')[0].appendChild(d) } } if (document.body) { var a = document.createElement('iframe'); a.height = 1; a.width = 1; a.style.position = 'absolute'; a.style.top = 0; a.style.left = 0; a.style.border = 'none'; a.style.visibility = 'hidden'; document.body.appendChild(a); if ('loading' !== document.readyState) c(); else if (window.addEventListener) document.addEventListener('DOMContentLoaded', c); else { var e = document.onreadystatechange || function () { }; document.onreadystatechange = function (b) { e(b); 'loading' !== document.readyState && (document.onreadystatechange = e, c()) } } } })();</script>
+</body>
+
+</html>
